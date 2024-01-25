@@ -1,5 +1,5 @@
 # mavros_line-follow
-## PX4 & MAVROS Drone line-follow & AI-Follow education project.
+## PX4 & MAVROS Drone Line-Follow & AI-Track-Follow education project.
 
 
 
