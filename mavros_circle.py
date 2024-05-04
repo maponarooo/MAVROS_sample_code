@@ -2,75 +2,92 @@
 
 import rospy
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode, SetModeRequest, CommandBoolRequest
-from geometry_msgs.msg import PoseStamped, Twist
+from mavros_msgs.srv import CommandBool, SetMode, CommandBoolRequest, SetModeRequest
+from geometry_msgs.msg import PoseStamped
 from math import pow, sqrt
 import math
+import numpy as np
 
 current_state = State()
 pose = PoseStamped()
-radius = 3
+radius = 5
 
 def state_cb(msg):
     global current_state
     current_state = msg
 
-def position_cb(msg):
-    global pose
-    pose = msg.pose
+# def position_cb(msg):
+#     global pose
+#     pose = msg
 
 def calculate_distance(x1, y1, x2, y2):
     return sqrt(pow((x2-x1),2) + pow((y2-y1),2))
 
 if __name__ == "__main__":
-    rospy.init_node('offboard_node')
-    rate = rospy.Rate(20.0)
+    rospy.init_node('mavros_circle', anonymous=True)
 
     state_sub = rospy.Subscriber("/mavros/state", State, state_cb)
-    local_pos_pub = rospy.Publisher('mavros/setpoint_position/local', PoseStamped, queue_size=10)
-    local_pos_sub = rospy.Subscriber('mavros/local_position/local', PoseStamped, position_cb)
-    rospy.wait_for_service("/mavros/cmd/arming")
+    local_pos_pub = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
+    # local_pos_sub = rospy.Subscriber('/mavros/local_position/pose', PoseStamped, position_cb)
+
     arming_client = rospy.ServiceProxy('mavros/cmd/arming', CommandBool)
-    rospy.wait_for_service("/mavros/set_mode")
     set_mode_client = rospy.ServiceProxy('mavros/set_mode', SetMode)
 
-    while (not rospy.is_shutdown() and not current_state.connected):
+    # Setpoint publishing MUST be faster than 2Hz
+    rate = rospy.Rate(20)
+
+    # Wait for Flight Controller connection
+    while(not rospy.is_shutdown() and not current_state.connected):
         rate.sleep()
 
-    pose.pose.position.x = 0.0
-    pose.pose.position.y = 0.0
-    pose.pose.position.z = 2.0
+    pose = PoseStamped()
 
+    pose.pose.position.x = 0
+    pose.pose.position.y = 0
+    pose.pose.position.z = 2
+
+    # Send a few setpoints before starting
     for i in range(100):
         if(rospy.is_shutdown()):
             break
-            
+
         local_pos_pub.publish(pose)
         rate.sleep()
 
     offb_set_mode = SetModeRequest()
     offb_set_mode.custom_mode = 'OFFBOARD'
-    
+
     arm_cmd = CommandBoolRequest()
     arm_cmd.value = True
 
-    if (set_mode_client.call(offb_set_mode).mode_sent == True):
-        rospy.loginfo("Offboard enabled")
+    last_req = rospy.Time.now()
+    theta = 0.01
+    #distance = calculate_distance(pose.pose.position.x, pose.pose.position.y, 0, 0)
 
-    if (arming_client.call(arm_cmd).success == True):
-        rospy.loginfo("Vehicle armed")
+    while(not rospy.is_shutdown()):
+        if(current_state.mode != "OFFBOARD" and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+            if(set_mode_client.call(offb_set_mode).mode_sent == True):
+                rospy.loginfo("OFFBOARD enabled")
 
-    rospy.loginfo("Taking off...")
-
-    while not rospy.is_shutdown():
-        distance = calculate_distance(pose.pose.position.x, pose.pose.position.y, 0, 0)
-        if distance > radius:
-            pose.pose.position.x = pose.pose.position.x/radius
-            pose.pose.position.y = pose.pose.position.y/radius
+            last_req = rospy.Time.now()
         else:
-            theta = math.atan2(pose.pose.position.y, pose.pose.position.x) + 0.1
-            pose.pose.position.x = radius * math.cos(theta)
-            pose.pose.position.y = radius * math.sin(theta)
+            if(not current_state.armed and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+                if(arming_client.call(arm_cmd).success == True):
+                    rospy.loginfo("Vehicle armed")
+
+                last_req = rospy.Time.now()
+            else:
+                # "an equation of a circle!"
+                pose.pose.position.x = radius * np.cos(theta)
+                pose.pose.position.y = radius * np.sin(theta)
+                pose.pose.position.z = 2
 
         local_pos_pub.publish(pose)
+        rospy.loginfo(theta)
+
+        theta += 0.02
+        if theta > 2*math.pi: # Reset angle to keep it within bounds
+            theta = 0.01
+
         rate.sleep()
+
