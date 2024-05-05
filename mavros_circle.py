@@ -8,16 +8,16 @@ from math import pow, sqrt
 import math
 import numpy as np
 
-current_state = State()
-pose = PoseStamped()
-radius = 5
-
-def state_cb(msg):
-    global current_state
-    current_state = msg
-
 if __name__ == "__main__":
     rospy.init_node('mavros_circle', anonymous=True)
+
+    current_state = State()
+    pose = PoseStamped()
+    radius = 5
+
+    def state_cb(msg):
+        global current_state
+        current_state = msg
 
     state_sub = rospy.Subscriber("/mavros/state", State, state_cb)
     local_pos_pub = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
