@@ -16,13 +16,6 @@ def state_cb(msg):
     global current_state
     current_state = msg
 
-# def position_cb(msg):
-#     global pose
-#     pose = msg
-
-def calculate_distance(x1, y1, x2, y2):
-    return sqrt(pow((x2-x1),2) + pow((y2-y1),2))
-
 if __name__ == "__main__":
     rospy.init_node('mavros_circle', anonymous=True)
 
@@ -62,7 +55,6 @@ if __name__ == "__main__":
 
     last_req = rospy.Time.now()
     theta = 0.01
-    #distance = calculate_distance(pose.pose.position.x, pose.pose.position.y, 0, 0)
 
     while(not rospy.is_shutdown()):
         if(current_state.mode != "OFFBOARD" and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
