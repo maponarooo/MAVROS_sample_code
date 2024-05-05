@@ -1,83 +1,116 @@
+#!/usr/bin/env python3
+
 import rospy
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode
+from mavros_msgs.srv import CommandBool, SetMode, CommandBoolRequest, SetModeRequest
 from geometry_msgs.msg import PoseStamped, Twist
-import time
+from math import pow, sqrt
+import math
+import numpy as np
 
-def set_velocity(velocity_publisher, x=0, y=0, z=0, yaw=0):
-    vel_msg = Twist()
-    vel_msg.linear.x = x
-    vel_msg.linear.y = y
-    vel_msg.linear.z = z
-    vel_msg.angular.z = yaw
-    velocity_publisher.publish(vel_msg)
+if __name__ == "__main__":
+    rospy.init_node('mavros_square', anonymous=True)
 
-def takeoff_sequence(local_pos_pub, current_pose, height):
-    rospy.loginfo("Taking off...")
+    current_state = State()
     pose = PoseStamped()
-    pose.pose.position.x = current_pose.pose.position.x
-    pose.pose.position.y = current_pose.pose.position.y
-    pose.pose.position.z = height
+
+    def state_cb(msg):
+        global current_state
+        current_state = msg
+
+    def set_velocity(velocity_publisher, x=0, y=0, z=0, yaw=0):
+        vel_cmd = Twist()
+        vel_cmd.linear.x = x
+        vel_cmd.linear.y = y
+        vel_cmd.linear.z = z
+        vel_cmd.angular.z = yaw
+        velocity_publisher.publish(vel_cmd)
+
+    state_sub = rospy.Subscriber("/mavros/state", State, state_cb)
+    local_pos_pub = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
+    velocity_publisher = rospy.Publisher('/mavros/setpoint_velocity/cmd_vel_unstamped', Twist, queue_size=10)
+
+    arming_client = rospy.ServiceProxy('mavros/cmd/arming', CommandBool)
+    set_mode_client = rospy.ServiceProxy('mavros/set_mode', SetMode)
+
+    # Setpoint publishing MUST be faster than 2Hz
+    rate = rospy.Rate(10)
+
+    # Wait for Flight Controller connection
+    while(not rospy.is_shutdown() and not current_state.connected):
+        rate.sleep()
+
+    pose = PoseStamped()
+
+    pose.pose.position.x = 0
+    pose.pose.position.y = 0
+    pose.pose.position.z = 2
+    #pose.pose.orientation.z = 0
+
+    # Send a few setpoints before starting
     for i in range(100):
+        if(rospy.is_shutdown()):
+            break
+
         local_pos_pub.publish(pose)
         rate.sleep()
-    rospy.loginfo("Takeoff finished")
 
-def land_sequence(land_client):
-    rospy.loginfo("Landing...")
-    resp1 = land_client.call()
-    if resp1.success:
-        rospy.loginfo("Landing sequence finished")
+    offb_set_mode = SetModeRequest()
+    offb_set_mode.custom_mode = 'OFFBOARD'
 
-def fly_square(velocity_publisher):
-    rospy.loginfo("Flying square path...")
-    set_velocity(velocity_publisher, x=1)
-    time.sleep(3)
-    set_velocity(velocity_publisher, y=1)
-    time.sleep(3)
-    set_velocity(velocity_publisher, x=-1)
-    time.sleep(3)
-    set_velocity(velocity_publisher, y=-1)
-    time.sleep(3)
-    rospy.loginfo("Square path finished")
+    arm_cmd = CommandBoolRequest()
+    arm_cmd.value = True
 
-rospy.init_node('fly_square', anonymous=True)
-rate = rospy.Rate(20) # 20hz
+    last_req = rospy.Time.now()
+    square_xy = 2.0 # the length of a side of a square.
+    delta_xy = 0.0 # fly speed 
+    gamma_xy = 2.0 # the length of a side of a square.
+    vel_x = 0
+    vel_y = 0
+    vel_z = 0.5
+    vel_yaw = 0
 
-# Connect to services for arming and changing flight mode
-arming_client = rospy.ServiceProxy('/mavros/cmd/arming', CommandBool)
-set_mode_client = rospy.ServiceProxy('/mavros/set_mode', SetMode)
-land_client = rospy.ServiceProxy('/mavros/cmd/land', CommandBool)
+    while(not rospy.is_shutdown()):
+        if(current_state.mode != "OFFBOARD" and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+            if(set_mode_client.call(offb_set_mode).mode_sent == True):
+                rospy.loginfo("OFFBOARD enabled!")
+                last_req = rospy.Time.now()
+        else:
+            if(not current_state.armed and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
+                if(arming_client.call(arm_cmd).success == True):
+                    rospy.loginfo("Vehicle armed!")
+                    last_req = rospy.Time.now()
+        
+        if(current_state.armed and (rospy.Time.now() - last_req) >= rospy.Duration(10.0) and (rospy.Time.now() - last_req) < rospy.Duration(20.0)):
+            rospy.loginfo("Vehicle Fly Square path-1.")
+            vel_x = 1
+            vel_y = 0
+            vel_z = 0
+            vel_yaw = 0
+        elif(current_state.armed and (rospy.Time.now() - last_req) >= rospy.Duration(20.0) and (rospy.Time.now() - last_req) < rospy.Duration(30.0)):
+            rospy.loginfo("Vehicle Fly Square path-2.")
+            vel_x = 0
+            vel_y = 1
+            vel_z = 0
+            vel_yaw = 0
+        elif(current_state.armed and (rospy.Time.now() - last_req) >= rospy.Duration(30.0) and (rospy.Time.now() - last_req) < rospy.Duration(40.0)):
+            rospy.loginfo("Vehicle Fly Square path-3.")
+            vel_x = -1
+            vel_y = 0
+            vel_z = 0
+            vel_yaw = 0
+        elif(current_state.armed and (rospy.Time.now() - last_req) >= rospy.Duration(40.0) and (rospy.Time.now() - last_req) < rospy.Duration(50.0)):
+            rospy.loginfo("Vehicle Fly Square path-4.")
+            vel_x = 0
+            vel_y = -1
+            vel_z = 0
+            vel_yaw = 0
+        elif(current_state.armed and (rospy.Time.now() - last_req) > rospy.Duration(50.0)):
+            rospy.loginfo("Vehicle Stoped!")
+            vel_x = 0
+            vel_y = 0
+            vel_z = 0
+            vel_yaw = 0
 
-# Connect to publisher for setting velocity
-velocity_publisher = rospy.Publisher('/mavros/setpoint_velocity/cmd_vel_unstamped', Twist, queue_size=10)
-local_pos_pub = rospy.Publisher('/mavros/setpoint_position/local', PoseStamped, queue_size=10)
-
-# Connect to subscriber for getting current state and pose
-current_state = State()
-current_pose = PoseStamped()
-def state_callback(state):
-    global current_state
-    current_state = state
-state_sub = rospy.Subscriber("/mavros/state", State, state_callback)
-def pose_callback(pose):
-    global current_pose
-    current_pose = pose
-pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, pose_callback)
-
-# Wait for FCU connection
-while not rospy.is_shutdown() and not current_state.connected:
-    rate.sleep()
-
-# Set offboard mode and arm
-set_mode_client(base_mode=0, custom_mode="OFFBOARD")
-arming_client(True)
-
-# Takeoff
-takeoff_sequence(local_pos_pub, current_pose, 3)
-
-# Fly square path
-fly_square(velocity_publisher)
-
-# Land
-land_sequence(land_client)
+        set_velocity(velocity_publisher, vel_x, vel_y, vel_z, vel_yaw)
+        rate.sleep()
