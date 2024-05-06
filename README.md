@@ -1,6 +1,6 @@
-# PX4 OFFBOARD + MAVROS(1) Python Examples.
+# PX4 OFFBOARD + MAVROS(2) Python Examples.
 
-## 쿼드(QUAD) 드론연구소에서 제공하는 MAVROS(1) Python 예제 코드 입니다.     
+## 쿼드(QUAD) 드론연구소에서 제공하는 MAVROS ROS2 Python 예제 코드 입니다.     
 ---
 
 ## 쿼드(QUAD) 자율주행드론 개발 교육과정 안내    
