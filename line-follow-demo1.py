@@ -1,3 +1,8 @@
+############################################################################
+# Copyright. QUAD Drone Lab.
+# E-Mail. maponarooo@naver.com
+# Commercial use or unauthorized copying of this code is prohibited by law.
+############################################################################
 import cv2
 import numpy as np
 import rospy
