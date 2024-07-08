@@ -1,3 +1,10 @@
+############################################################################
+# Copyright. QUAD Drone Lab.
+# E-Mail. maponarooo@naver.com
+# Commercial use or unauthorized copying of this code is prohibited by law.
+############################################################################
+# This code is not migrated ROS2 yet!!! It'll be soon.
+
 #!/usr/bin/env python3
 
 import rospy
