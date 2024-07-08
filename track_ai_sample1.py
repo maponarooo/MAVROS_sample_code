@@ -1,5 +1,9 @@
 # Original Git : https://github.com/AnishDey27/Object-Tracking-Drone
-
+############################################################################
+# Copyright. QUAD Drone Lab.
+# E-Mail. maponarooo@naver.com
+# Commercial use or unauthorized copying of this code is prohibited by law.
+############################################################################
 import cv2, pyrebase, socket,struct
 import numpy as np
 from tracker import CentroidTracker
