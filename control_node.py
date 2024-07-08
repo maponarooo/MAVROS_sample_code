@@ -3,7 +3,7 @@
 # E-Mail. maponarooo@naver.com
 # Commercial use or unauthorized copying of this code is prohibited by law.
 ############################################################################
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # ROS python API
 import rospy
 import cv2
