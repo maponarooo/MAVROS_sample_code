@@ -9,5 +9,5 @@ ROS2 MAVROS 샘플코드는 ROS2 Branch를 참고 하세요.
 https://blog.naver.com/maponarooo/223132765367    
 
 ---
-
+Copyright 2024. 쿼드(QUAD)드론연구소    
 Produced by 쿼드(QUAD)드론연구소 [maponarooo@naver.com] https://smartstore.naver.com/maponarooo
