@@ -1,85 +1,103 @@
-#!/usr/bin/env python3
-
-import rospy
-from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode, CommandBoolRequest, SetModeRequest
+############################################################################
+# Copyright. QUAD Drone Lab.
+# E-Mail. maponarooo@naver.com
+# Commercial use or unauthorized copying of this code is prohibited by law.
+############################################################################
+import rclpy
+from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
-from math import pow, sqrt
-import math
-import numpy as np
+from mavros_msgs.msg import State
+from mavros_msgs.srv import CommandBool, SetMode
+from rclpy.duration import Duration
+from math import sin, cos, pi
 
-if __name__ == "__main__":
-    rospy.init_node('mavros_circle', anonymous=True)
+class OffboardControlNode(Node):
 
-    current_state = State()
-    pose = PoseStamped()
-    radius = 5
+    def __init__(self):
+        super().__init__('offb_node_py')
 
-    def state_cb(msg):
-        global current_state
-        current_state = msg
+        self.current_state = State()
 
-    state_sub = rospy.Subscriber("/mavros/state", State, state_cb)
-    local_pos_pub = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
-    # local_pos_sub = rospy.Subscriber('/mavros/local_position/pose', PoseStamped, position_cb)
+        self.state_sub = self.create_subscription(
+            State,
+            'mavros/state',
+            self.state_cb,
+            10
+        )
 
-    arming_client = rospy.ServiceProxy('mavros/cmd/arming', CommandBool)
-    set_mode_client = rospy.ServiceProxy('mavros/set_mode', SetMode)
+        self.local_pos_pub = self.create_publisher(
+            PoseStamped,
+            'mavros/setpoint_position/local',
+            10
+        )
 
-    # Setpoint publishing MUST be faster than 2Hz
-    rate = rospy.Rate(20)
+        self.arming_client = self.create_client(CommandBool, 'mavros/cmd/arming')
+        self.set_mode_client = self.create_client(SetMode, 'mavros/set_mode')
 
-    # Wait for Flight Controller connection
-    while(not rospy.is_shutdown() and not current_state.connected):
-        rate.sleep()
+        while not self.arming_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for arming service...')
 
-    pose = PoseStamped()
+        while not self.set_mode_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for set_mode service...')
 
-    pose.pose.position.x = 0
-    pose.pose.position.y = 0
-    pose.pose.position.z = 2
+        self.pose = PoseStamped()
+        self.pose.pose.position.x = 0.0
+        self.pose.pose.position.y = 0.0
+        self.pose.pose.position.z = 5.0
 
-    # Send a few setpoints before starting
-    for i in range(100):
-        if(rospy.is_shutdown()):
-            break
+        self.last_req = self.get_clock().now()
 
-        local_pos_pub.publish(pose)
-        rate.sleep()
+        self.timer = self.create_timer(0.05, self.timer_callback)
 
-    offb_set_mode = SetModeRequest()
-    offb_set_mode.custom_mode = 'OFFBOARD'
+        # 원주 비행을 위한 변수 초기화
+        self.radius = 10.0  # 원의 반지름 (미터)
+        self.Theta = 0  # 각속도 (라디안)
+        self.dt = 0.01 # Timer_period 
 
-    arm_cmd = CommandBoolRequest()
-    arm_cmd.value = True
+    def state_cb(self, msg):
+        self.current_state = msg
 
-    last_req = rospy.Time.now()
-    theta = 0.01
+    def response_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(f'Result of MAV_CMD: {response}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {str(e)}')
 
-    while(not rospy.is_shutdown()):
-        if(current_state.mode != "OFFBOARD" and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
-            if(set_mode_client.call(offb_set_mode).mode_sent == True):
-                rospy.loginfo("OFFBOARD enabled")
+    def timer_callback(self):
+        if self.current_state.mode != "OFFBOARD" and (self.get_clock().now() - self.last_req) > Duration(seconds=5.0):
+            offb_set_mode = SetMode.Request()
+            offb_set_mode.custom_mode = "OFFBOARD"
+            future = self.set_mode_client.call_async(offb_set_mode)
+            future.add_done_callback(self.response_callback)
 
-            last_req = rospy.Time.now()
+            self.last_req = self.get_clock().now()
         else:
-            if(not current_state.armed and (rospy.Time.now() - last_req) > rospy.Duration(5.0)):
-                if(arming_client.call(arm_cmd).success == True):
-                    rospy.loginfo("Vehicle armed")
+            if not self.current_state.armed and (self.get_clock().now() - self.last_req) > Duration(seconds=5.0):
+                arm_cmd = CommandBool.Request()
+                arm_cmd.value = True
+                future = self.arming_client.call_async(arm_cmd)
+                future.add_done_callback(self.response_callback)
 
-                last_req = rospy.Time.now()
-            else:
-                # "an equation of a circle!"
-                pose.pose.position.x = radius * np.cos(theta)
-                pose.pose.position.y = radius * np.sin(theta)
-                pose.pose.position.z = 2
+                self.last_req = self.get_clock().now()
 
-        local_pos_pub.publish(pose)
-        rospy.loginfo(theta)
+        # 원주 비행을 위한 좌표 계산
+        self.pose.pose.position.x = self.radius * cos(self.Theta)
+        self.pose.pose.position.y = self.radius * sin(self.Theta)
+        self.pose.pose.position.z = 5.0  # 고도는 일정 유지
 
-        theta += 0.02
-        if theta > 2*math.pi: # Reset angle to keep it within bounds
-            theta = 0.01
+        self.local_pos_pub.publish(self.pose)
+        #self.get_logger().info('mavros/setpoint_position/local published....')
 
-        rate.sleep()
+        self.Theta = self.Theta + self.dt
+def main(args=None):
+    rclpy.init(args=args)
+    node = OffboardControlNode()
 
+    rclpy.spin(node)
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
