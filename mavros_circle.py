@@ -50,7 +50,7 @@ class OffboardControlNode(Node):
         self.timer = self.create_timer(0.05, self.timer_callback)
 
         # 원주 비행을 위한 변수 초기화
-        self.radius = 10.0  # 원의 반지름 (미터)
+        self.radius = 5.0  # 원의 반지름 (미터)
         self.Theta = 0  # 각속도 (라디안)
         self.dt = 0.01 # Timer_period 
 
@@ -72,24 +72,23 @@ class OffboardControlNode(Node):
             future.add_done_callback(self.response_callback)
 
             self.last_req = self.get_clock().now()
-        else:
-            if not self.current_state.armed and (self.get_clock().now() - self.last_req) > Duration(seconds=5.0):
-                arm_cmd = CommandBool.Request()
-                arm_cmd.value = True
-                future = self.arming_client.call_async(arm_cmd)
-                future.add_done_callback(self.response_callback)
+        elif not self.current_state.armed and (self.get_clock().now() - self.last_req) > Duration(seconds=5.0):
+            arm_cmd = CommandBool.Request()
+            arm_cmd.value = True
+            future = self.arming_client.call_async(arm_cmd)
+            future.add_done_callback(self.response_callback)
 
-                self.last_req = self.get_clock().now()
-
-        # 원주 비행을 위한 좌표 계산
-        self.pose.pose.position.x = self.radius * cos(self.Theta)
-        self.pose.pose.position.y = self.radius * sin(self.Theta)
-        self.pose.pose.position.z = 5.0  # 고도는 일정 유지
+            self.last_req = self.get_clock().now()
+        elif self.current_state.armed and (self.get_clock().now() - self.last_req) > Duration(seconds=10.0):
+            # 원주 비행을 위한 좌표 계산
+            self.pose.pose.position.x = self.radius * cos(self.Theta)
+            self.pose.pose.position.y = self.radius * sin(self.Theta)
+            self.pose.pose.position.z = 5.0  # 고도는 일정 유지
+            self.Theta = self.Theta + self.dt
 
         self.local_pos_pub.publish(self.pose)
-        #self.get_logger().info('mavros/setpoint_position/local published....')
-
-        self.Theta = self.Theta + self.dt
+            #self.get_logger().info('mavros/setpoint_position/local published....')
+        
 def main(args=None):
     rclpy.init(args=args)
     node = OffboardControlNode()
